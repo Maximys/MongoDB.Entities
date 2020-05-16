@@ -1,55 +1,16 @@
-﻿using MongoDB.Bson;
-using MongoDB.Bson.Serialization.Attributes;
-using MongoDB.Driver;
-using MongoDB.Entities.Core;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using MongoDB.Driver;
 
-[assembly: InternalsVisibleTo("MongoDB.Entities.Tests")]
 namespace MongoDB.Entities
 {
     /// <summary>
-    /// Inherit this base class in order to create your own File Entities
+    /// Streamer of the data.
     /// </summary>
-    public abstract class FileEntity : Entity
-    {
-        private readonly DataStreamer streamer;
-
-        /// <summary>
-        /// The total amount of data in bytes that has been uploaded so far
-        /// </summary>
-        [BsonElement]
-        public double FileSize { get; internal set; }
-
-        /// <summary>
-        /// The number of chunks that have been created so far
-        /// </summary>
-        [BsonElement]
-        public int ChunkCount { get; internal set; }
-
-        /// <summary>
-        /// Returns true only when all the chunks have been stored successfully in mongodb
-        /// </summary>
-        [BsonElement]
-        public bool UploadSuccessful { get; internal set; }
-
-        /// <summary>
-        /// Access the DataStreamer class for uploading and downloading data
-        /// </summary>
-        public DataStreamer Data
-        {
-            get
-            {
-                return streamer ?? new DataStreamer(this);
-            }
-        }
-    }
-
     public class DataStreamer
     {
         private static readonly HashSet<string> indexedDBs = new HashSet<string>();
@@ -61,6 +22,10 @@ namespace MongoDB.Entities
         private byte[] buffer;
         private List<byte> dataChunk;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="DataStreamer"/> class.
+        /// </summary>
+        /// <param name="parent">Parent entity.</param>
         public DataStreamer(FileEntity parent)
         {
             this.parent = parent;
@@ -81,8 +46,8 @@ namespace MongoDB.Entities
         /// </summary>
         /// <param name="stream">The output stream to write the data</param>
         /// <param name="timeOutSeconds">The maximum number of seconds allowed for the operation to complete</param>
-        /// <param name="batchSize"></param>
-        /// <param name="session"></param>
+        /// <param name="batchSize">The number of chunks you want returned at once.</param>
+        /// <param name="session">An optional session if using within a transaction.</param>
         public Task DownloadWithTimeoutAsync(Stream stream, int timeOutSeconds, int batchSize = 1, IClientSessionHandle session = null)
         {
             return DownloadAsync(stream, batchSize, new CancellationTokenSource(timeOutSeconds * 1000).Token, session);
@@ -91,10 +56,10 @@ namespace MongoDB.Entities
         /// <summary>
         /// Download binary data for this file entity from mongodb in chunks into a given stream.
         /// </summary>
-        /// <param name="stream">The output stream to write the data</param>
-        /// <param name="batchSize">The number of chunks you want returned at once</param>
+        /// <param name="stream">The output stream to write the data.</param>
+        /// <param name="batchSize">The number of chunks you want returned at once.</param>
         /// <param name="cancellation">An optional cancellation token.</param>
-        /// <param name="session">An optional session if using within a transaction</param>
+        /// <param name="session">An optional session if using within a transaction.</param>
         public async Task DownloadAsync(Stream stream, int batchSize = 1, CancellationToken cancellation = default, IClientSessionHandle session = null)
         {
             parent.ThrowIfUnsaved();
@@ -133,10 +98,10 @@ namespace MongoDB.Entities
         /// <summary>
         /// Upload binary data for this file entity into mongodb in chunks from a given stream with a timeout period.
         /// </summary>
-        /// <param name="stream">The input stream to read the data from</param>
-        /// <param name="timeOutSeconds">The maximum number of seconds allowed for the operation to complete</param>
-        /// <param name="chunkSizeKB">The 'average' size of one chunk in KiloBytes</param>
-        /// <param name="session">An optional session if using within a transaction</param>
+        /// <param name="stream">The input stream to read the data from.</param>
+        /// <param name="timeOutSeconds">The maximum number of seconds allowed for the operation to complete.</param>
+        /// <param name="chunkSizeKB">The 'average' size of one chunk in KiloBytes.</param>
+        /// <param name="session">An optional session if using within a transaction.</param>
         public Task UploadWithTimeoutAsync(Stream stream, int timeOutSeconds, int chunkSizeKB = 256, IClientSessionHandle session = null)
         {
             return UploadAsync(stream, chunkSizeKB, new CancellationTokenSource(timeOutSeconds * 1000).Token, session);
@@ -146,10 +111,10 @@ namespace MongoDB.Entities
         /// Upload binary data for this file entity into mongodb in chunks from a given stream.
         /// <para>TIP: Make sure to save the entity before calling this method.</para>
         /// </summary>
-        /// <param name="stream">The input stream to read the data from</param>
-        /// <param name="chunkSizeKB">The 'average' size of one chunk in KiloBytes</param>
+        /// <param name="stream">The input stream to read the data from.</param>
+        /// <param name="chunkSizeKB">The 'average' size of one chunk in KiloBytes.</param>
         /// <param name="cancellation">An optional cancellation token.</param>
-        /// <param name="session">An optional session if using within a transaction</param>
+        /// <param name="session">An optional session if using within a transaction.</param>
         public async Task UploadAsync(Stream stream, int chunkSizeKB = 256, CancellationToken cancellation = default, IClientSessionHandle session = null)
         {
             parent.ThrowIfUnsaved();
@@ -195,7 +160,11 @@ namespace MongoDB.Entities
                 dataChunk = null;
             }
         }
-
+        /// <summary>
+        /// Cleanup file chunks.
+        /// </summary>
+        /// <param name="session">An optional session if using within a transaction.</param>
+        /// <returns>Task of cleanuping.</returns>
         private async Task CleanUpAsync(IClientSessionHandle session)
         {
             await (session == null
@@ -206,7 +175,13 @@ namespace MongoDB.Entities
             parent.ChunkCount = 0;
             parent.UploadSuccessful = false;
         }
-
+        /// <summary>
+        /// Flush data to database.
+        /// </summary>
+        /// <param name="session">An optional session if using within a transaction.</param>
+        /// <param name="isLastChunk">Is current chunk last.</param>
+        /// <param name="cancellation">Cancellation token.</param>
+        /// <returns>Task for flushing data.</returns>
         private async Task FlushToDBAsync(IClientSessionHandle session, bool isLastChunk = false, CancellationToken cancellation = default)
         {
             if (!isLastChunk)
@@ -229,7 +204,11 @@ namespace MongoDB.Entities
                 dataChunk.Clear();
             }
         }
-
+        /// <summary>
+        /// Update metadata of the file.
+        /// </summary>
+        /// <param name="session">An optional session if using within a transaction.</param>
+        /// <returns>Task for updating metadata.</returns>
         private Task UpdateMetaDataAsync(IClientSessionHandle session)
         {
             var coll = db.Collection<FileEntity>().Database.GetCollection<FileEntity>(parent.CollectionName());
@@ -244,21 +223,5 @@ namespace MongoDB.Entities
                    ? coll.UpdateOneAsync(filter, update)
                    : coll.UpdateOneAsync(session, filter, update);
         }
-    }
-
-    [Name("[BINARY_CHUNKS]")]
-    internal class FileChunk : IEntity
-    {
-        [BsonId]
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string ID { get; set; }
-
-        [Ignore]
-        public DateTime ModifiedOn { get; set; }
-
-        [BsonRepresentation(BsonType.ObjectId)]
-        public string FileID { get; set; }
-
-        public byte[] Data { get; set; }
     }
 }
