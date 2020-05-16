@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System;
+using System.Runtime.CompilerServices;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Entities.Core;
@@ -28,7 +29,24 @@ namespace MongoDB.Entities
         /// </summary>
         [BsonElement]
         public bool UploadSuccessful { get; internal set; }
-
+        /// <summary>
+        /// Stream for uploading and downloading data.
+        /// </summary>
+        public Lazy<MongoFileStream> Stream
+        {
+            get
+            {
+                if (stream == null)
+                {
+                    stream = new Lazy<MongoFileStream>(() => new MongoFileStream());
+                }
+                return stream;
+            }
+        }
+        /// <summary>
+        /// Field for <see cref="Stream"/>.
+        /// </summary>
+        protected Lazy<MongoFileStream> stream;
         /// <summary>
         /// Access the DataStreamer class for uploading and downloading data
         /// </summary>
